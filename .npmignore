@@ -4,6 +4,8 @@ test/
 .github/
 .git/
 .gitignore
+.claude/
+jest.config.js
 
 # Documentation (keep README.md)
 docs/

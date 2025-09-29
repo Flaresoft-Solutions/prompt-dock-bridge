@@ -1,11 +1,11 @@
 {
   "name": "prompt-dock-bridge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Production-ready bridge for connecting web applications to AI coding agents",
   "main": "src/index.js",
   "type": "module",
   "bin": {
-    "prompt-dock-bridge": "./bin/prompt-dock-bridge.js"
+    "prompt-dock-bridge": "bin/prompt-dock-bridge.js"
   },
   "scripts": {
     "start": "node src/index.js",
@@ -36,7 +36,7 @@
   "homepage": "https://promptdock.app",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Flaresoft-Solutions/prompt-dock-bridge.git"
+    "url": "git+https://github.com/Flaresoft-Solutions/prompt-dock-bridge.git"
   },
   "bugs": {
     "url": "https://github.com/Flaresoft-Solutions/prompt-dock-bridge/issues"

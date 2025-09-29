@@ -38,7 +38,8 @@ const DEFAULT_CONFIG = {
     customOriginAcknowledged: false,
     sessionTimeout: 3600000, // 1 hour
     commandTimeout: 30000, // 30 seconds
-    maxCommandsPerMinute: 100
+    maxCommandsPerMinute: 100,
+    clockSkewTolerance: 5000 // 5 seconds
   },
   agents: {
     preferred: 'claude-code',
@@ -207,6 +208,11 @@ function validateConfig(config) {
 
   if (!config.security.maxCommandsPerMinute || config.security.maxCommandsPerMinute < 1) {
     errors.push('Max commands per minute must be at least 1');
+  }
+
+  const clockSkewTolerance = config.security.clockSkewTolerance;
+  if (!Number.isFinite(clockSkewTolerance) || clockSkewTolerance < 0) {
+    errors.push('Clock skew tolerance must be a non-negative number');
   }
 
   if (!Array.isArray(config.security.allowedOrigins)) {

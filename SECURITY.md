@@ -92,6 +92,7 @@ Cryptographic signatures, origin validation, session management
     "allowCustomOrigins": false,     // Default false
     "sessionTimeout": 3600000,       // 1 hour max recommended
     "commandTimeout": 30000,         // 30 seconds max recommended
+    "clockSkewTolerance": 5000,      // 5 seconds default, adjust if needed
     "maxCommandsPerMinute": 100      // Adjust per needs
   }
 }

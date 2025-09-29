@@ -179,7 +179,11 @@ function enforceCommandTimestamp(message, config) {
     return;
   }
 
-  if (messageTime > now + 5000) {
+  const clockSkewTolerance = Number.isFinite(config?.security?.clockSkewTolerance)
+    ? config.security.clockSkewTolerance
+    : 5000;
+
+  if (messageTime > now + clockSkewTolerance) {
     throw new Error('Command timestamp is in the future');
   }
 

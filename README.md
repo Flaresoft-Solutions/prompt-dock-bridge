@@ -102,6 +102,7 @@ The bridge stores configuration in `~/.prompt-dock/config.json`. Default configu
     "allowCustomOrigins": false,
     "sessionTimeout": 3600000,
     "commandTimeout": 30000,
+    "clockSkewTolerance": 5000,
     "maxCommandsPerMinute": 100
   },
   "agents": {
@@ -126,6 +127,7 @@ The bridge stores configuration in `~/.prompt-dock/config.json`. Default configu
 - **RSA-2048 encryption** for all command signing
 - **JWT tokens** with automatic refresh
 - **Command expiration** (30 seconds max)
+- **Clock skew tolerance** (configurable, default 5 seconds)
 - **Replay attack prevention**
 - **Rate limiting** (100 commands/minute)
 - **CORS protection** with origin whitelist

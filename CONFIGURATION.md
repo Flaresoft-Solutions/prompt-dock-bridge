@@ -109,6 +109,7 @@ Prompt Dock Bridge stores configuration in `~/.prompt-dock/config.json`. The bri
     "customOriginAcknowledged": false,
     "sessionTimeout": 3600000,
     "commandTimeout": 30000,
+    "clockSkewTolerance": 5000,
     "maxCommandsPerMinute": 100,
     "allowedOrigins": [
       "https://promptdock.app",
@@ -127,6 +128,7 @@ Prompt Dock Bridge stores configuration in `~/.prompt-dock/config.json`. The bri
 - **`customOriginAcknowledged`**: Must be `true` if custom origins used
 - **`sessionTimeout`**: Session expiration in milliseconds (default: 1 hour)
 - **`commandTimeout`**: Command expiration in milliseconds (default: 30 seconds)
+- **`clockSkewTolerance`**: Allowed future timestamp skew in milliseconds (default: 5 seconds)
 - **`maxCommandsPerMinute`**: Rate limit per session (default: 100)
 
 #### Custom Origins (⚠️ Advanced)

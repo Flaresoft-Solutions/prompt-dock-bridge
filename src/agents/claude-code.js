@@ -10,11 +10,30 @@ export class ClaudeCodeAgent extends BaseAgent {
     super('claude-code', config);
     this.planOutput = '';
     this.isInPlanMode = false;
-    this.claudePath = null;
+    this.claudePath = config.claudePath || null;
   }
 
   async detectInstallation() {
-    // Common installation paths for Claude Code
+    // If user configured a specific path, use it
+    if (this.claudePath && this.claudePath !== 'auto-detect') {
+      try {
+        const { stdout, stderr } = await execAsync(`${this.claudePath} --version`);
+        const version = stdout.trim() || stderr.trim();
+        return {
+          installed: true,
+          version,
+          path: this.claudePath
+        };
+      } catch (error) {
+        logger.error(`Configured Claude path ${this.claudePath} is invalid:`, error.message);
+        return {
+          installed: false,
+          error: `Configured path ${this.claudePath} failed: ${error.message}`
+        };
+      }
+    }
+
+    // Auto-detect: Common installation paths for Claude Code
     const possiblePaths = [
       `${process.env.HOME}/.claude/local/claude`, // Most common location
       'claude', // In PATH

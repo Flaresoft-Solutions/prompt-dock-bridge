@@ -9,12 +9,24 @@ const agents = [
   { name: 'codex', class: CodexAgent }
 ];
 
-export async function detectAgents() {
+export async function detectAgents(config = {}) {
   const detectedAgents = [];
+  const agentPaths = config?.agents?.paths || {};
 
   for (const agentConfig of agents) {
     try {
-      const agent = new agentConfig.class();
+      const agentOptions = {};
+
+      // Pass configured path if available
+      if (agentConfig.name === 'claude-code' && agentPaths['claude-code']) {
+        agentOptions.claudePath = agentPaths['claude-code'];
+      } else if (agentConfig.name === 'cursor-agent' && agentPaths['cursor-agent']) {
+        agentOptions.cursorPath = agentPaths['cursor-agent'];
+      } else if (agentConfig.name === 'codex' && agentPaths['codex']) {
+        agentOptions.codexPath = agentPaths['codex'];
+      }
+
+      const agent = new agentConfig.class(agentOptions);
       const result = await agent.detectInstallation();
 
       if (result.installed) {

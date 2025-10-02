@@ -25,7 +25,7 @@ export async function startBridge(options = {}) {
 
     await initializeSecurity();
 
-    const detectedAgents = await detectAgents();
+    const detectedAgents = await detectAgents(config);
     logger.info(`Detected agents: ${detectedAgents.map(a => a.name).join(', ')}`);
 
     if (detectedAgents.length === 0) {
@@ -114,7 +114,7 @@ export async function stopBridge() {
 }
 
 export async function getStatus() {
-  const detectedAgents = await detectAgents();
+  const detectedAgents = await detectAgents(config);
 
   return {
     running: httpServer !== null,

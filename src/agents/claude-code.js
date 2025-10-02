@@ -84,12 +84,14 @@ export class ClaudeCodeAgent extends BaseAgent {
 
       logger.info('Executing Claude Code in plan mode');
 
+      // Use -p (print/SDK mode) with a plan-focused prompt
+      const planPrompt = `Please create a detailed execution plan for the following task. Do not execute anything yet, just provide a clear plan with steps:\n\n${prompt}`;
+
       const result = await this.spawnProcess(
         this.claudePath || 'claude',
-        ['--plan'],
+        ['-p', planPrompt, '--output-format', 'text'],
         {
           workdir,
-          input: prompt,
           closeStdin: true,
           onOutput: (output) => {
             this.planOutput += output;

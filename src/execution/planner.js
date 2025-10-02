@@ -30,6 +30,13 @@ export class ExecutionPlanner {
 
       logger.info(`Creating execution plan with ${agentName}`);
 
+      // Forward agent output to callback if provided
+      if (options.onOutput) {
+        agent.on('output', (output) => {
+          options.onOutput(output);
+        });
+      }
+
       const planResult = await agent.executeInPlanMode(prompt, normalizedWorkdir);
 
       if (!planResult.success) {

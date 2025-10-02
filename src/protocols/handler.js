@@ -294,7 +294,15 @@ async function handleExecutePrompt(message, clientInfo) {
         clientInfo.agentType,
         {
           ...options,
-          sessionId: clientInfo.session?.id
+          sessionId: clientInfo.session?.id,
+          onOutput: (output) => {
+            // Stream agent output to client
+            sendMessage(clientInfo.ws, MessageTypes.AGENT_OUTPUT, {
+              type: output.type,
+              data: output.data,
+              executionId: output.executionId
+            });
+          }
         }
       );
 

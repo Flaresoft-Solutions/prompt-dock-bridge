@@ -70,6 +70,7 @@ export async function validatePairingCode(code, clientPublicKey) {
   pairingCodes.delete(code);
 
   logger.info(`Pairing code ${code} validated for ${pairingData.appName}`);
+  logger.info(`Storing client public key: ${clientPublicKey.substring(0, 50)}...`);
 
   return {
     appName: pairingData.appName,

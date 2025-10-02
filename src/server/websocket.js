@@ -222,6 +222,7 @@ async function verifyClientSignature({ message, clientInfo, sessionManager, conf
       }
 
       publicKey = sessionFromToken.clientPublicKey;
+      logger.info(`Verifying authenticate signature with public key: ${publicKey ? publicKey.substring(0, 50) + '...' : 'MISSING'}`);
     } else {
       publicKey = clientInfo.session?.clientPublicKey;
 

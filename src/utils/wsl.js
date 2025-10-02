@@ -86,15 +86,26 @@ function translateWSLToWindows(wslPath) {
 }
 
 function translateWindowsToWSL(windowsPath) {
-  if (windowsPath.startsWith('\\\\wsl$\\')) {
-    const parts = windowsPath.split('\\');
+  // Handle \\wsl.localhost\Ubuntu\path format
+  if (windowsPath.startsWith('\\\\wsl.localhost\\')) {
+    const parts = windowsPath.split('\\').filter(p => p);
     if (parts.length >= 3) {
-      const distro = parts[2];
-      const remainingPath = parts.slice(3).join('/');
+      // parts[0] = 'wsl.localhost', parts[1] = distro name, parts[2+] = path
+      const remainingPath = parts.slice(2).join('/');
       return `/${remainingPath}`;
     }
   }
 
+  // Handle \\wsl$\Ubuntu\path format
+  if (windowsPath.startsWith('\\\\wsl$\\')) {
+    const parts = windowsPath.split('\\').filter(p => p);
+    if (parts.length >= 3) {
+      const remainingPath = parts.slice(2).join('/');
+      return `/${remainingPath}`;
+    }
+  }
+
+  // Handle C:\path format
   if (windowsPath.match(/^[A-Z]:\\/)) {
     const drive = windowsPath[0].toLowerCase();
     const remainingPath = windowsPath.substring(3).replace(/\\/g, '/');

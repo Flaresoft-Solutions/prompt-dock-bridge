@@ -2,6 +2,7 @@ import { createAgent } from '../agents/detector.js';
 import { getGitStatus, hasUncommittedChanges } from '../git/status.js';
 import { createBackupBranch } from '../git/operations.js';
 import { logger } from '../utils/logger.js';
+import { translatePath } from '../utils/wsl.js';
 
 export class ExecutionPlanner {
   constructor(sessionManager, config) {
@@ -14,9 +15,13 @@ export class ExecutionPlanner {
     try {
       const planId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
 
-      await this.validateWorkdir(workdir);
+      // Translate Windows WSL paths to Linux paths
+      const normalizedWorkdir = translatePath(workdir, 'windows-to-wsl');
+      logger.verbose(`Normalized workdir: ${workdir} -> ${normalizedWorkdir}`);
 
-      const gitStatus = await getGitStatus(workdir);
+      await this.validateWorkdir(normalizedWorkdir);
+
+      const gitStatus = await getGitStatus(normalizedWorkdir);
       if (!gitStatus.isGitRepo) {
         logger.warn('Working directory is not a git repository');
       }
@@ -25,7 +30,7 @@ export class ExecutionPlanner {
 
       logger.info(`Creating execution plan with ${agentName}`);
 
-      const planResult = await agent.executeInPlanMode(prompt, workdir);
+      const planResult = await agent.executeInPlanMode(prompt, normalizedWorkdir);
 
       if (!planResult.success) {
         throw new Error(`Plan generation failed: ${planResult.error}`);
@@ -35,7 +40,7 @@ export class ExecutionPlanner {
         id: planId,
         sessionId: options.sessionId || null,
         prompt,
-        workdir,
+        workdir: normalizedWorkdir,
         agentName,
         plan: planResult.plan,
         modifiedFiles: planResult.modifiedFiles || [],
@@ -51,7 +56,7 @@ export class ExecutionPlanner {
 
       if (gitStatus.isGitRepo && this.config.git.createBackupBranch) {
         try {
-          const backup = await createBackupBranch(workdir);
+          const backup = await createBackupBranch(normalizedWorkdir);
           plan.backupBranch = backup.backupBranch;
           logger.info(`Created backup branch: ${backup.backupBranch}`);
         } catch (error) {

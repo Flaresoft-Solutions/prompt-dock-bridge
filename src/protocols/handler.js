@@ -254,9 +254,36 @@ async function handleInitSession(message, clientInfo) {
     clientInfo.agentType = agentType;
     clientInfo.agentConfig = agentConfig || {};
 
+    // Scan files first
+    const { scanDirectory } = await import('../utils/file-scanner.js');
+    const files = await scanDirectory(workdir);
+
+    broadcastToClient(clientInfo, MessageTypes.FILE_LIST, {
+      files,
+      executionId: null
+    });
+
+    // Create worktree for isolated execution
+    const { createWorktree } = await import('../git/worktree.js');
+    const worktree = await createWorktree(workdir, null);  // null = auto-detect branch
+
+    // Store worktree info on clientInfo for later use
+    clientInfo.worktree = worktree;
+
+    broadcastToClient(clientInfo, MessageTypes.WORKTREE_CREATED, {
+      worktreePath: worktree.worktreePath,
+      branchName: worktree.branchName,
+      baseBranch: worktree.baseBranch,
+      createdAt: worktree.createdAt
+    });
+
     sendMessage(clientInfo.ws, 'session-initialized', {
       workdir,
-      agentType
+      agentType,
+      worktree: {
+        worktreePath: worktree.worktreePath,
+        branchName: worktree.branchName
+      }
     }, message.id);
 
   } catch (error) {
@@ -330,6 +357,13 @@ async function handleExecutePrompt(message, clientInfo) {
               data: output.data,
               executionId: output.executionId
             });
+          },
+          onStateChange: (stateData) => {
+            // Stream agent state changes to client
+            broadcastToClient(clientInfo, MessageTypes.AGENT_STATE_CHANGE, {
+              state: stateData.state,
+              executionId: stateData.executionId
+            });
           }
         }
       );
@@ -343,7 +377,8 @@ async function handleExecutePrompt(message, clientInfo) {
 
       const execution = await orchestrator.executePlan(
         options.planId,
-        clientInfo.session.id
+        clientInfo.session.id,
+        clientInfo.worktree  // Pass worktree from session initialization
       );
 
       sendMessage(clientInfo.ws, 'execution-started', {

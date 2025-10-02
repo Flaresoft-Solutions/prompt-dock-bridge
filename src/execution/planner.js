@@ -30,12 +30,21 @@ export class ExecutionPlanner {
 
       logger.info(`Creating execution plan with ${agentName}`);
 
-      // Forward agent output to callback if provided
+      // Forward agent output and state changes to callback if provided
       if (options.onOutput) {
         agent.on('output', (output) => {
+          logger.verbose(`Agent output: ${output.type} - ${output.data?.substring(0, 100)}...`);
           options.onOutput(output);
         });
       }
+
+      // Forward state changes
+      agent.on('state-change', (stateData) => {
+        logger.verbose(`Agent state change: ${stateData.state}`);
+        if (options.onStateChange) {
+          options.onStateChange(stateData);
+        }
+      });
 
       const planResult = await agent.executeInPlanMode(prompt, normalizedWorkdir);
 

@@ -17,7 +17,7 @@ export class ExecutionOrchestrator extends EventEmitter {
     this.executionQueues = new Map();
   }
 
-  async executePlan(planId, sessionId) {
+  async executePlan(planId, sessionId, worktree = null) {
     const planner = this.planner;
     const plan = planner.getPlan(planId);
 
@@ -50,7 +50,8 @@ export class ExecutionOrchestrator extends EventEmitter {
         progress: 0,
         modifiedFiles: [],
         output: [],
-        agent: null
+        agent: null,
+        worktree  // Pass worktree from session initialization
       };
 
       this.activeExecutions.set(executionId, execution);
@@ -77,27 +78,30 @@ export class ExecutionOrchestrator extends EventEmitter {
 
     execution.status = 'initializing';
 
-    // Create worktree for isolated execution
-    let worktree = null;
+    // Use existing worktree from session initialization
+    let worktree = execution.worktree || null;
     let fileWatcher = null;
 
     try {
-      // Pass null to auto-detect default branch
-      worktree = await createWorktree(plan.workdir, null);
-      execution.worktree = worktree;
+      // Only create new worktree if one doesn't already exist
+      if (!worktree) {
+        // Pass null to auto-detect default branch
+        worktree = await createWorktree(plan.workdir, null);
+        execution.worktree = worktree;
 
-      this.emit('worktree-created', {
-        executionId: execution.id,
-        worktreePath: worktree.worktreePath,
-        branchName: worktree.branchName
-      });
+        this.emit('worktree-created', {
+          executionId: execution.id,
+          worktreePath: worktree.worktreePath,
+          branchName: worktree.branchName
+        });
 
-      // Scan initial file structure
-      const files = await scanDirectory(worktree.worktreePath);
-      this.emit('file-list', {
-        executionId: execution.id,
-        files
-      });
+        // Scan initial file structure
+        const files = await scanDirectory(worktree.worktreePath);
+        this.emit('file-list', {
+          executionId: execution.id,
+          files
+        });
+      }
 
       // Create agent with worktree path
       execution.agent = createAgent(plan.agentName, this.config.agents);

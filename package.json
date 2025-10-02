@@ -1,6 +1,6 @@
 {
   "name": "prompt-dock-bridge",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "Production-ready bridge for connecting web applications to AI coding agents",
   "main": "src/index.js",
   "type": "module",

@@ -10,25 +10,41 @@ export class ClaudeCodeAgent extends BaseAgent {
     super('claude-code', config);
     this.planOutput = '';
     this.isInPlanMode = false;
+    this.claudePath = null;
   }
 
   async detectInstallation() {
-    try {
-      const { stdout, stderr } = await execAsync('claude --version');
-      const version = stdout.trim() || stderr.trim();
+    // Common installation paths for Claude Code
+    const possiblePaths = [
+      'claude', // In PATH
+      `${process.env.HOME}/.claude-code/bin/claude`,
+      `${process.env.HOME}/.local/bin/claude`,
+      '/usr/local/bin/claude',
+      '/usr/bin/claude'
+    ];
 
-      return {
-        installed: true,
-        version,
-        path: (await execAsync('which claude')).stdout.trim()
-      };
-    } catch (error) {
-      logger.verbose('Claude Code not detected:', error.message);
-      return {
-        installed: false,
-        error: error.message
-      };
+    for (const cmdPath of possiblePaths) {
+      try {
+        const { stdout, stderr } = await execAsync(`${cmdPath} --version`);
+        const version = stdout.trim() || stderr.trim();
+
+        this.claudePath = cmdPath; // Store the working path
+
+        return {
+          installed: true,
+          version,
+          path: cmdPath
+        };
+      } catch (error) {
+        continue;
+      }
     }
+
+    logger.verbose('Claude Code not detected in any common location');
+    return {
+      installed: false,
+      error: 'Claude command not found in PATH or common installation directories'
+    };
   }
 
   async getVersion() {
@@ -41,10 +57,15 @@ export class ClaudeCodeAgent extends BaseAgent {
     this.planOutput = '';
 
     try {
+      // Ensure we have the claude path
+      if (!this.claudePath) {
+        await this.detectInstallation();
+      }
+
       logger.info('Executing Claude Code in plan mode');
 
       const result = await this.spawnProcess(
-        'claude',
+        this.claudePath || 'claude',
         ['--plan'],
         {
           workdir,
@@ -79,6 +100,11 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   async executePrompt(prompt, workdir, options = {}) {
     try {
+      // Ensure we have the claude path
+      if (!this.claudePath) {
+        await this.detectInstallation();
+      }
+
       logger.info('Executing Claude Code prompt');
 
       const args = [];
@@ -99,7 +125,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         args.push('--web-fetch', options.webFetch.join(','));
       }
 
-      const result = await this.spawnProcess('claude', args, {
+      const result = await this.spawnProcess(this.claudePath || 'claude', args, {
         workdir,
         input: prompt,
         closeStdin: !options.interactive,
@@ -172,9 +198,14 @@ export class ClaudeCodeAgent extends BaseAgent {
   }
 
   async handleInteractiveMode(workdir) {
+    // Ensure we have the claude path
+    if (!this.claudePath) {
+      await this.detectInstallation();
+    }
+
     logger.info('Starting Claude Code interactive mode');
 
-    return this.spawnProcess('claude', ['--interactive'], {
+    return this.spawnProcess(this.claudePath || 'claude', ['--interactive'], {
       workdir,
       closeStdin: false
     });

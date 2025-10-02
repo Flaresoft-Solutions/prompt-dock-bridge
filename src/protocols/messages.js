@@ -3,7 +3,8 @@ export const MessageTypes = {
   PAIR: 'pair',
   AUTHENTICATE: 'authenticate',
   INIT_SESSION: 'init-session',
-  START_AGENT_SESSION: 'start-agent-session',  // NEW: Start agent session (scan files + create worktree)
+  START_AGENT_SESSION: 'start-agent-session',  // NEW: Start agent session (scan files + get branches)
+  CREATE_WORKTREE: 'create-worktree',  // NEW: Create worktree with selected branch
   GIT_STATUS: 'git-status',
   GIT_COMMAND: 'git-command',
   EXECUTE_PROMPT: 'execute-prompt',
@@ -127,6 +128,11 @@ export const MessageSchema = {
 
   [MessageTypes.START_AGENT_SESSION]: {
     required: [],
+    optional: []
+  },
+
+  [MessageTypes.CREATE_WORKTREE]: {
+    required: ['baseBranch'],
     optional: []
   },
 

@@ -129,6 +129,10 @@ export async function handleMessage(message, clientInfo, sessionManager, config)
         await handleStartAgentSession(message, clientInfo);
         break;
 
+      case MessageTypes.CREATE_WORKTREE:
+        await handleCreateWorktree(message, clientInfo);
+        break;
+
       case MessageTypes.GIT_STATUS:
         await handleGitStatus(message, clientInfo);
         break;
@@ -254,12 +258,17 @@ async function handleInitSession(message, clientInfo) {
   try {
     const { workdir, agentType, agentConfig } = message.data;
 
-    clientInfo.workdir = workdir;
+    // Translate Windows WSL paths to Linux paths
+    const { translatePath } = await import('../utils/wsl.js');
+    const normalizedWorkdir = translatePath(workdir, 'windows-to-wsl');
+    logger.verbose(`Normalized workdir: ${workdir} -> ${normalizedWorkdir}`);
+
+    clientInfo.workdir = normalizedWorkdir;
     clientInfo.agentType = agentType;
     clientInfo.agentConfig = agentConfig || {};
 
     sendMessage(clientInfo.ws, 'session-initialized', {
-      workdir,
+      workdir: normalizedWorkdir,
       agentType
     }, message.id);
 
@@ -274,18 +283,48 @@ async function handleStartAgentSession(message, clientInfo) {
       throw new Error('Session not initialized - call init-session first');
     }
 
+    // workdir is already normalized in handleInitSession
+    const workdir = clientInfo.workdir;
+
     // Scan files first
     const { scanDirectory } = await import('../utils/file-scanner.js');
-    const files = await scanDirectory(clientInfo.workdir);
+    const files = await scanDirectory(workdir);
 
     broadcastToClient(clientInfo, MessageTypes.FILE_LIST, {
       files,
       executionId: null
     });
 
+    // Get git status including available branches
+    const gitStatus = await getGitStatus(workdir);
+
+    sendMessage(clientInfo.ws, 'agent-session-started', {
+      fileCount: files.length,
+      gitStatus: {
+        isGitRepo: gitStatus.isGitRepo,
+        currentBranch: gitStatus.currentBranch,
+        branches: gitStatus.branches,
+        hasUncommittedChanges: gitStatus.hasUncommittedChanges
+      }
+    }, message.id);
+
+  } catch (error) {
+    sendError(clientInfo.ws, error.message, message.id);
+  }
+}
+
+async function handleCreateWorktree(message, clientInfo) {
+  try {
+    if (!clientInfo.workdir) {
+      throw new Error('Session not initialized - call init-session first');
+    }
+
+    const { baseBranch } = message.data;
+    const workdir = clientInfo.workdir;
+
     // Create worktree for isolated execution
     const { createWorktree } = await import('../git/worktree.js');
-    const worktree = await createWorktree(clientInfo.workdir, null);  // null = auto-detect branch
+    const worktree = await createWorktree(workdir, baseBranch);
 
     // Store worktree info on clientInfo for later use
     clientInfo.worktree = worktree;
@@ -297,12 +336,12 @@ async function handleStartAgentSession(message, clientInfo) {
       createdAt: worktree.createdAt
     });
 
-    sendMessage(clientInfo.ws, 'agent-session-started', {
+    sendMessage(clientInfo.ws, 'worktree-created', {
       worktree: {
         worktreePath: worktree.worktreePath,
-        branchName: worktree.branchName
-      },
-      fileCount: files.length
+        branchName: worktree.branchName,
+        baseBranch: worktree.baseBranch
+      }
     }, message.id);
 
   } catch (error) {
@@ -314,7 +353,11 @@ async function handleGitStatus(message, clientInfo) {
   try {
     const { workdir } = message.data;
 
-    const gitStatus = await getGitStatus(workdir);
+    // Translate Windows WSL paths to Linux paths
+    const { translatePath } = await import('../utils/wsl.js');
+    const normalizedWorkdir = translatePath(workdir, 'windows-to-wsl');
+
+    const gitStatus = await getGitStatus(normalizedWorkdir);
 
     sendMessage(clientInfo.ws, MessageTypes.GIT_STATUS_RESPONSE, gitStatus, message.id);
 
@@ -327,19 +370,23 @@ async function handleGitCommand(message, clientInfo) {
   try {
     const { command, workdir, args, options } = message.data;
 
+    // Translate Windows WSL paths to Linux paths
+    const { translatePath } = await import('../utils/wsl.js');
+    const normalizedWorkdir = translatePath(workdir, 'windows-to-wsl');
+
     let result;
 
     switch (command) {
       case 'create-branch':
-        result = await createBranch(workdir, args.name);
+        result = await createBranch(normalizedWorkdir, args.name);
         break;
 
       case 'switch-branch':
-        result = await switchBranch(workdir, args.name);
+        result = await switchBranch(normalizedWorkdir, args.name);
         break;
 
       case 'stash':
-        result = await stashChanges(workdir, args.message);
+        result = await stashChanges(normalizedWorkdir, args.message);
         break;
 
       default:

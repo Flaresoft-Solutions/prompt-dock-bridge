@@ -16,6 +16,7 @@ export class ClaudeCodeAgent extends BaseAgent {
   async detectInstallation() {
     // Common installation paths for Claude Code
     const possiblePaths = [
+      `${process.env.HOME}/.claude/local/claude`, // Most common location
       'claude', // In PATH
       `${process.env.HOME}/.claude-code/bin/claude`,
       `${process.env.HOME}/.local/bin/claude`,

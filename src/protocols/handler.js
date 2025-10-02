@@ -13,13 +13,17 @@ let orchestrator = null;
 
 export async function handleMessage(message, clientInfo, sessionManager, config) {
   try {
+    logger.verbose(`Handling message type: ${message.type}`);
+
     const validation = validateMessage(message);
     if (!validation.valid) {
+      logger.error(`Message validation failed: ${validation.errors.join(', ')}`);
       return sendError(clientInfo.ws, validation.errors.join(', '), message.id);
     }
 
     const dataValidation = validateMessageData(message.type, message.data || {});
     if (!dataValidation.valid) {
+      logger.error(`Data validation failed for ${message.type}: ${dataValidation.errors.join(', ')}`);
       return sendError(clientInfo.ws, dataValidation.errors.join(', '), message.id);
     }
 
@@ -279,16 +283,20 @@ async function handleInitSession(message, clientInfo) {
 
 async function handleStartAgentSession(message, clientInfo) {
   try {
+    logger.info('Starting agent session...');
+
     if (!clientInfo.workdir) {
       throw new Error('Session not initialized - call init-session first');
     }
 
     // workdir is already normalized in handleInitSession
     const workdir = clientInfo.workdir;
+    logger.info(`Scanning files in: ${workdir}`);
 
     // Scan files first
     const { scanDirectory } = await import('../utils/file-scanner.js');
     const files = await scanDirectory(workdir);
+    logger.info(`Found ${files.length} files`);
 
     broadcastToClient(clientInfo, MessageTypes.FILE_LIST, {
       files,
@@ -296,7 +304,9 @@ async function handleStartAgentSession(message, clientInfo) {
     });
 
     // Get git status including available branches
+    logger.info('Getting git status...');
     const gitStatus = await getGitStatus(workdir);
+    logger.info(`Git status: ${gitStatus.branches?.length || 0} branches, current: ${gitStatus.currentBranch}`);
 
     sendMessage(clientInfo.ws, 'agent-session-started', {
       fileCount: files.length,
@@ -308,7 +318,10 @@ async function handleStartAgentSession(message, clientInfo) {
       }
     }, message.id);
 
+    logger.info('Agent session started successfully');
+
   } catch (error) {
+    logger.error('Failed to start agent session:', error);
     sendError(clientInfo.ws, error.message, message.id);
   }
 }

@@ -308,7 +308,7 @@ async function handleStartAgentSession(message, clientInfo) {
     const gitStatus = await getGitStatus(workdir);
     logger.info(`Git status: ${gitStatus.branches?.length || 0} branches, current: ${gitStatus.currentBranch}`);
 
-    sendMessage(clientInfo.ws, 'agent-session-started', {
+    const responseData = {
       fileCount: files.length,
       gitStatus: {
         isGitRepo: gitStatus.isGitRepo,
@@ -316,7 +316,10 @@ async function handleStartAgentSession(message, clientInfo) {
         branches: gitStatus.branches,
         hasUncommittedChanges: gitStatus.hasUncommittedChanges
       }
-    }, message.id);
+    };
+
+    logger.info(`Sending agent-session-started with ${JSON.stringify(responseData).substring(0, 200)}`);
+    sendMessage(clientInfo.ws, 'agent-session-started', responseData, message.id);
 
     logger.info('Agent session started successfully');
 
@@ -630,7 +633,9 @@ async function handleAgentFeedback(message, clientInfo) {
 
 function sendMessage(ws, type, data = {}, messageId = null) {
   const message = createMessage(type, data, messageId);
-  ws.send(JSON.stringify(message));
+  const json = JSON.stringify(message);
+  logger.info(`Sending message type=${type} length=${json.length} bytes`);
+  ws.send(json);
 }
 
 function sendError(ws, error, messageId = null) {
@@ -640,5 +645,7 @@ function sendError(ws, error, messageId = null) {
 
 function broadcastToClient(clientInfo, type, data) {
   const message = createMessage(type, data);
-  clientInfo.ws.send(JSON.stringify(message));
+  const json = JSON.stringify(message);
+  logger.info(`Broadcasting message type=${type} length=${json.length} bytes`);
+  clientInfo.ws.send(json);
 }

@@ -14,13 +14,13 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   async detectInstallation() {
     try {
-      const { stdout, stderr } = await execAsync('claude-code --version');
+      const { stdout, stderr } = await execAsync('claude --version');
       const version = stdout.trim() || stderr.trim();
 
       return {
         installed: true,
         version,
-        path: (await execAsync('which claude-code')).stdout.trim()
+        path: (await execAsync('which claude')).stdout.trim()
       };
     } catch (error) {
       logger.verbose('Claude Code not detected:', error.message);
@@ -44,7 +44,7 @@ export class ClaudeCodeAgent extends BaseAgent {
       logger.info('Executing Claude Code in plan mode');
 
       const result = await this.spawnProcess(
-        'claude-code',
+        'claude',
         ['--plan'],
         {
           workdir,
@@ -99,7 +99,7 @@ export class ClaudeCodeAgent extends BaseAgent {
         args.push('--web-fetch', options.webFetch.join(','));
       }
 
-      const result = await this.spawnProcess('claude-code', args, {
+      const result = await this.spawnProcess('claude', args, {
         workdir,
         input: prompt,
         closeStdin: !options.interactive,
@@ -174,7 +174,7 @@ export class ClaudeCodeAgent extends BaseAgent {
   async handleInteractiveMode(workdir) {
     logger.info('Starting Claude Code interactive mode');
 
-    return this.spawnProcess('claude-code', ['--interactive'], {
+    return this.spawnProcess('claude', ['--interactive'], {
       workdir,
       closeStdin: false
     });

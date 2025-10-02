@@ -82,10 +82,15 @@ export function verifySignature(data, signature, publicKeyToUse = publicKey) {
   }
 
   try {
+    logger.info(`[Crypto] Canonical payload being VERIFIED: ${data}`);
+    logger.info(`[Crypto] Canonical payload length: ${data.length}`);
+    logger.info(`[Crypto] Signature to verify: ${signature.substring(0, 50)}...`);
     const verify = crypto.createVerify('SHA256');
     verify.write(data);
     verify.end();
-    return verify.verify(publicKeyToUse, signature, 'base64');
+    const result = verify.verify(publicKeyToUse, signature, 'base64');
+    logger.info(`[Crypto] Verification result: ${result}`);
+    return result;
   } catch (error) {
     logger.error('Signature verification failed:', error);
     return false;

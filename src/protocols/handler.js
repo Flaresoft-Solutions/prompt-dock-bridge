@@ -632,10 +632,16 @@ async function handleAgentFeedback(message, clientInfo) {
 }
 
 function sendMessage(ws, type, data = {}, messageId = null) {
-  const message = createMessage(type, data, messageId);
-  const json = JSON.stringify(message);
-  logger.info(`Sending message type=${type} length=${json.length} bytes`);
-  ws.send(json);
+  try {
+    const message = createMessage(type, data, messageId);
+    const json = JSON.stringify(message);
+    logger.info(`Sending message type=${type} length=${json.length} bytes`);
+    ws.send(json);
+    logger.verbose(`Message sent successfully: ${type}`);
+  } catch (error) {
+    logger.error(`Failed to send message type=${type}:`, error);
+    throw error;
+  }
 }
 
 function sendError(ws, error, messageId = null) {
@@ -644,8 +650,14 @@ function sendError(ws, error, messageId = null) {
 }
 
 function broadcastToClient(clientInfo, type, data) {
-  const message = createMessage(type, data);
-  const json = JSON.stringify(message);
-  logger.info(`Broadcasting message type=${type} length=${json.length} bytes`);
-  clientInfo.ws.send(json);
+  try {
+    const message = createMessage(type, data);
+    const json = JSON.stringify(message);
+    logger.info(`Broadcasting message type=${type} length=${json.length} bytes`);
+    clientInfo.ws.send(json);
+    logger.verbose(`Broadcast sent successfully: ${type}`);
+  } catch (error) {
+    logger.error(`Failed to broadcast message type=${type}:`, error);
+    throw error;
+  }
 }

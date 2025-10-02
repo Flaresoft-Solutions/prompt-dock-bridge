@@ -75,12 +75,32 @@ export async function handleMessage(message, clientInfo, sessionManager, config)
         broadcastToClient(clientInfo, MessageTypes.AGENT_OUTPUT, data);
       });
 
+      orchestrator.on('agent-state-change', (data) => {
+        broadcastToClient(clientInfo, MessageTypes.AGENT_STATE_CHANGE, data);
+      });
+
       orchestrator.on('execution-progress', (data) => {
         broadcastToClient(clientInfo, MessageTypes.EXECUTION_PROGRESS, data);
       });
 
       orchestrator.on('file-changed', (data) => {
         broadcastToClient(clientInfo, MessageTypes.FILE_CHANGED, data);
+      });
+
+      orchestrator.on('file-list', (data) => {
+        broadcastToClient(clientInfo, MessageTypes.FILE_LIST, data);
+      });
+
+      orchestrator.on('file-diff', (data) => {
+        broadcastToClient(clientInfo, MessageTypes.FILE_DIFF, data);
+      });
+
+      orchestrator.on('worktree-created', (data) => {
+        broadcastToClient(clientInfo, MessageTypes.WORKTREE_CREATED, data);
+      });
+
+      orchestrator.on('worktree-deleted', (data) => {
+        broadcastToClient(clientInfo, MessageTypes.WORKTREE_DELETED, data);
       });
 
       orchestrator.on('execution-completed', (data) => {
@@ -135,6 +155,14 @@ export async function handleMessage(message, clientInfo, sessionManager, config)
 
       case MessageTypes.GENERATE_PR:
         await handleGeneratePR(message, clientInfo);
+        break;
+
+      case MessageTypes.CLEANUP_WORKTREE:
+        await handleCleanupWorktree(message, clientInfo);
+        break;
+
+      case MessageTypes.AGENT_FEEDBACK:
+        await handleAgentFeedback(message, clientInfo);
         break;
 
       case MessageTypes.HEALTH_CHECK:
@@ -439,6 +467,48 @@ async function handleEmergencyKillSwitch(message, clientInfo, sessionManager) {
       abortedExecutions,
       terminatedSessions
     }, message.id);
+  } catch (error) {
+    sendError(clientInfo.ws, error.message, message.id);
+  }
+}
+
+async function handleCleanupWorktree(message, clientInfo) {
+  try {
+    const { executionId } = message.data;
+
+    await orchestrator.cleanupWorktree(executionId);
+
+    sendMessage(clientInfo.ws, 'worktree-cleanup-complete', {
+      executionId
+    }, message.id);
+
+  } catch (error) {
+    sendError(clientInfo.ws, error.message, message.id);
+  }
+}
+
+async function handleAgentFeedback(message, clientInfo) {
+  try {
+    const { executionId, feedback } = message.data;
+
+    // Forward feedback to the active agent
+    const execution = orchestrator.getExecution(executionId);
+
+    if (!execution) {
+      throw new Error('Execution not found');
+    }
+
+    if (!execution.agent) {
+      throw new Error('No active agent for this execution');
+    }
+
+    await execution.agent.sendInteraction(feedback);
+
+    sendMessage(clientInfo.ws, 'feedback-sent', {
+      executionId,
+      success: true
+    }, message.id);
+
   } catch (error) {
     sendError(clientInfo.ws, error.message, message.id);
   }

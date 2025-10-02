@@ -10,7 +10,7 @@ export class BaseAgent extends EventEmitter {
     this.config = config;
     this.process = null;
     this.executionId = null;
-    this.status = 'idle';
+    this.status = 'idle';  // idle | streaming | waiting-input | executing | complete
     this.commandQueue = [];
     this.currentCommand = null;
     this.outputBuffer = '';
@@ -19,6 +19,7 @@ export class BaseAgent extends EventEmitter {
     this.retryAttempts = 0;
     this.maxRetries = config.retryAttempts || 3;
     this.maxBufferSize = config.maxBufferBytes || 4 * 1024 * 1024;
+    this.streamingState = 'idle';  // Track if agent is actively streaming output
   }
 
   async detectInstallation() {
@@ -77,15 +78,36 @@ export class BaseAgent extends EventEmitter {
         this.outputBuffer += output;
         this.trimBuffer('outputBuffer');
 
+        // Update streaming state
+        if (this.streamingState !== 'streaming') {
+          this.streamingState = 'streaming';
+          this.emit('state-change', {
+            executionId: this.executionId,
+            state: 'streaming',
+            timestamp: new Date().toISOString()
+          });
+        }
+
         this.emit('output', {
           type: 'stdout',
           data: output,
           executionId: this.executionId,
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          streamingState: this.streamingState
         });
 
         if (options.onOutput) {
           options.onOutput(output);
+        }
+
+        // Detect if agent is waiting for input (common patterns)
+        if (this.isWaitingForInput(output)) {
+          this.streamingState = 'waiting-input';
+          this.emit('state-change', {
+            executionId: this.executionId,
+            state: 'waiting-input',
+            timestamp: new Date().toISOString()
+          });
         }
       });
 
@@ -109,6 +131,15 @@ export class BaseAgent extends EventEmitter {
       this.process.on('close', (code) => {
         clearTimeout(timeoutHandle);
         this.status = 'idle';
+        this.streamingState = 'complete';
+
+        // Emit completion state
+        this.emit('state-change', {
+          executionId: this.executionId,
+          state: 'complete',
+          code,
+          timestamp: new Date().toISOString()
+        });
 
         const result = {
           code,
@@ -228,5 +259,26 @@ export class BaseAgent extends EventEmitter {
     if (bufferValue.length > this.maxBufferSize) {
       this[bufferName] = bufferValue.slice(bufferValue.length - this.maxBufferSize);
     }
+  }
+
+  isWaitingForInput(output) {
+    // Detect common patterns indicating agent is waiting for user input
+    const waitingPatterns = [
+      /\(y\/n\)/i,
+      /\(yes\/no\)/i,
+      /press enter/i,
+      /continue\?/i,
+      /proceed\?/i,
+      /\[y\/n\]/i,
+      /waiting for input/i,
+      /enter your choice/i,
+      /select an option/i
+    ];
+
+    return waitingPatterns.some(pattern => pattern.test(output));
+  }
+
+  getStreamingState() {
+    return this.streamingState;
   }
 }

@@ -7,10 +7,12 @@ export const MessageTypes = {
   GIT_COMMAND: 'git-command',
   EXECUTE_PROMPT: 'execute-prompt',
   AGENT_INTERACTION: 'agent-interaction',
+  AGENT_FEEDBACK: 'agent-feedback',  // NEW: User feedback during execution
   APPROVE_PLAN: 'approve-plan',
   REJECT_PLAN: 'reject-plan',
   ABORT_EXECUTION: 'abort-execution',
   GENERATE_PR: 'generate-pr',
+  CLEANUP_WORKTREE: 'cleanup-worktree',  // NEW: Cleanup worktree after PR
   GET_LOGS: 'get-logs',
   HEALTH_CHECK: 'health-check',
   EMERGENCY_KILL: 'emergency-kill',
@@ -25,7 +27,12 @@ export const MessageTypes = {
   AGENT_PLAN: 'agent-plan',
   AGENT_OUTPUT: 'agent-output',
   AGENT_QUESTION: 'agent-question',
-  FILE_CHANGED: 'file-changed',
+  AGENT_STATE_CHANGE: 'agent-state-change',  // NEW: Agent streaming/waiting/complete states
+  FILE_LIST: 'file-list',  // NEW: Initial directory structure
+  FILE_DIFF: 'file-diff',  // NEW: File changes with diff content
+  FILE_CHANGED: 'file-changed',  // Existing (deprecated in favor of FILE_DIFF)
+  WORKTREE_CREATED: 'worktree-created',  // NEW: Worktree creation event
+  WORKTREE_DELETED: 'worktree-deleted',  // NEW: Worktree deletion event
   EXECUTION_PROGRESS: 'execution-progress',
   EXECUTION_COMPLETE: 'execution-complete',
   PR_CREATED: 'pr-created',

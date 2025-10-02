@@ -3,6 +3,8 @@ import { logger } from '../utils/logger.js';
 import { EventEmitter } from 'events';
 import { generatePullRequest } from '../git/pr-generator.js';
 import { commitChanges } from '../git/operations.js';
+import { createWorktree, deleteWorktree, getWorktreeStatus } from '../git/worktree.js';
+import { scanDirectory, watchDirectory, getFileDiff } from '../utils/file-scanner.js';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -74,37 +76,68 @@ export class ExecutionOrchestrator extends EventEmitter {
     });
 
     execution.status = 'initializing';
-    execution.agent = createAgent(plan.agentName, this.config.agents);
 
-    execution.agent.on('output', (output) => {
-      execution.output.push(output);
-      this.emit('agent-output', {
-        executionId: execution.id,
-        output
-      });
-    });
-
-    execution.status = 'executing';
-    this.updateProgress(execution, 10);
-
-    const watchedFiles = new Set();
-    if (plan.modifiedFiles.length > 0) {
-      await this.startFileWatching(plan.workdir, plan.modifiedFiles, (file) => {
-        if (!watchedFiles.has(file)) {
-          watchedFiles.add(file);
-          execution.modifiedFiles.push(file);
-          this.emit('file-changed', {
-            executionId: execution.id,
-            file
-          });
-        }
-      });
-    }
+    // Create worktree for isolated execution
+    let worktree = null;
+    let fileWatcher = null;
 
     try {
+      // Pass null to auto-detect default branch
+      worktree = await createWorktree(plan.workdir, null);
+      execution.worktree = worktree;
+
+      this.emit('worktree-created', {
+        executionId: execution.id,
+        worktreePath: worktree.worktreePath,
+        branchName: worktree.branchName
+      });
+
+      // Scan initial file structure
+      const files = await scanDirectory(worktree.worktreePath);
+      this.emit('file-list', {
+        executionId: execution.id,
+        files
+      });
+
+      // Create agent with worktree path
+      execution.agent = createAgent(plan.agentName, this.config.agents);
+
+      execution.agent.on('output', (output) => {
+        execution.output.push(output);
+        this.emit('agent-output', {
+          executionId: execution.id,
+          ...output
+        });
+      });
+
+      execution.agent.on('state-change', (stateData) => {
+        this.emit('agent-state-change', {
+          executionId: execution.id,
+          ...stateData
+        });
+      });
+
+      // Watch for file changes in worktree
+      fileWatcher = await watchDirectory(
+        worktree.worktreePath,
+        (changeData) => {
+          if (!execution.modifiedFiles.includes(changeData.file)) {
+            execution.modifiedFiles.push(changeData.file);
+          }
+
+          this.emit('file-diff', {
+            executionId: execution.id,
+            ...changeData
+          });
+        }
+      );
+
+      execution.status = 'executing';
+      this.updateProgress(execution, 10);
+
       const result = await execution.agent.executePrompt(
         plan.prompt,
-        plan.workdir,
+        worktree.worktreePath,  // Execute in worktree
         {
           ...plan.options,
           apply: true,
@@ -128,14 +161,14 @@ export class ExecutionOrchestrator extends EventEmitter {
       this.updateProgress(execution, 80);
 
       execution.result = result;
-      execution.modifiedFiles = [...new Set([...execution.modifiedFiles, ...result.modifiedFiles])];
+      execution.modifiedFiles = [...new Set([...execution.modifiedFiles, ...(result.modifiedFiles || [])])];
 
       if (execution.modifiedFiles.length > 0) {
         this.updateProgress(execution, 90);
 
-        if (this.config.git.autoCommit) {
+        if (this.config.git?.autoCommit) {
           const commitResult = await commitChanges(
-            plan.workdir,
+            worktree.worktreePath,
             `AI-generated changes: ${plan.prompt.substring(0, 50)}...`,
             execution.modifiedFiles
           );
@@ -156,7 +189,8 @@ export class ExecutionOrchestrator extends EventEmitter {
         executionId: execution.id,
         planId: execution.planId,
         modifiedFiles: execution.modifiedFiles,
-        result: execution.result
+        result: execution.result,
+        worktree: worktree
       });
 
       logger.info(`Execution completed: ${execution.id}`);
@@ -175,7 +209,40 @@ export class ExecutionOrchestrator extends EventEmitter {
       logger.error(`Execution failed: ${execution.id}`, error);
       throw error;
     } finally {
-      await execution.agent.cleanup();
+      // Cleanup
+      if (execution.agent) {
+        try {
+          await execution.agent.cleanup();
+        } catch (cleanupError) {
+          logger.error(`Failed to cleanup agent:`, cleanupError);
+        }
+      }
+
+      if (fileWatcher) {
+        try {
+          await fileWatcher.close();
+        } catch (watcherError) {
+          logger.error(`Failed to close file watcher:`, watcherError);
+        }
+      }
+
+      // Auto-cleanup worktree only on failure, keep on success for PR creation
+      if (execution.status === 'failed' && worktree) {
+        try {
+          await deleteWorktree(
+            plan.workdir,
+            worktree.worktreePath,
+            worktree.branchName,
+            true  // force delete
+          );
+          logger.info(`Auto-cleaned failed execution worktree: ${worktree.branchName}`);
+        } catch (worktreeError) {
+          logger.error(`Failed to auto-cleanup worktree:`, worktreeError);
+        }
+      }
+
+      // Note: Successful executions keep worktree for PR creation
+      // User will explicitly request worktree cleanup after PR is created
     }
   }
 
@@ -228,6 +295,10 @@ export class ExecutionOrchestrator extends EventEmitter {
       throw new Error('Execution not completed');
     }
 
+    if (!execution.worktree) {
+      throw new Error('No worktree associated with execution');
+    }
+
     try {
       const prOptions = {
         prompt: execution.plan.prompt,
@@ -237,7 +308,8 @@ export class ExecutionOrchestrator extends EventEmitter {
         ...options
       };
 
-      const pr = await generatePullRequest(execution.plan.workdir, prOptions);
+      // Generate PR from worktree
+      const pr = await generatePullRequest(execution.worktree.worktreePath, prOptions);
 
       execution.pullRequest = pr;
 
@@ -249,6 +321,46 @@ export class ExecutionOrchestrator extends EventEmitter {
       return pr;
     } catch (error) {
       logger.error('Failed to generate PR:', error);
+      throw error;
+    }
+  }
+
+  async cleanupWorktree(executionId) {
+    const execution = this.activeExecutions.get(executionId);
+
+    if (!execution) {
+      throw new Error('Execution not found');
+    }
+
+    // Prevent cleanup while execution is still running
+    if (execution.status === 'executing' || execution.status === 'initializing') {
+      throw new Error('Cannot cleanup worktree while execution is still running');
+    }
+
+    if (!execution.worktree) {
+      logger.warn(`No worktree to cleanup for execution ${executionId}`);
+      return;
+    }
+
+    try {
+      await deleteWorktree(
+        execution.plan.workdir,
+        execution.worktree.worktreePath,
+        execution.worktree.branchName,
+        true  // force delete
+      );
+
+      this.emit('worktree-deleted', {
+        executionId: execution.id,
+        worktreePath: execution.worktree.worktreePath,
+        branchName: execution.worktree.branchName
+      });
+
+      execution.worktree = null;
+
+      logger.info(`Worktree cleaned up for execution ${executionId}`);
+    } catch (error) {
+      logger.error(`Failed to cleanup worktree for execution ${executionId}:`, error);
       throw error;
     }
   }

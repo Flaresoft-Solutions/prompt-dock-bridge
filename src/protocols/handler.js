@@ -125,6 +125,10 @@ export async function handleMessage(message, clientInfo, sessionManager, config)
         await handleInitSession(message, clientInfo);
         break;
 
+      case MessageTypes.START_AGENT_SESSION:
+        await handleStartAgentSession(message, clientInfo);
+        break;
+
       case MessageTypes.GIT_STATUS:
         await handleGitStatus(message, clientInfo);
         break;
@@ -254,9 +258,25 @@ async function handleInitSession(message, clientInfo) {
     clientInfo.agentType = agentType;
     clientInfo.agentConfig = agentConfig || {};
 
+    sendMessage(clientInfo.ws, 'session-initialized', {
+      workdir,
+      agentType
+    }, message.id);
+
+  } catch (error) {
+    sendError(clientInfo.ws, error.message, message.id);
+  }
+}
+
+async function handleStartAgentSession(message, clientInfo) {
+  try {
+    if (!clientInfo.workdir) {
+      throw new Error('Session not initialized - call init-session first');
+    }
+
     // Scan files first
     const { scanDirectory } = await import('../utils/file-scanner.js');
-    const files = await scanDirectory(workdir);
+    const files = await scanDirectory(clientInfo.workdir);
 
     broadcastToClient(clientInfo, MessageTypes.FILE_LIST, {
       files,
@@ -265,7 +285,7 @@ async function handleInitSession(message, clientInfo) {
 
     // Create worktree for isolated execution
     const { createWorktree } = await import('../git/worktree.js');
-    const worktree = await createWorktree(workdir, null);  // null = auto-detect branch
+    const worktree = await createWorktree(clientInfo.workdir, null);  // null = auto-detect branch
 
     // Store worktree info on clientInfo for later use
     clientInfo.worktree = worktree;
@@ -277,13 +297,12 @@ async function handleInitSession(message, clientInfo) {
       createdAt: worktree.createdAt
     });
 
-    sendMessage(clientInfo.ws, 'session-initialized', {
-      workdir,
-      agentType,
+    sendMessage(clientInfo.ws, 'agent-session-started', {
       worktree: {
         worktreePath: worktree.worktreePath,
         branchName: worktree.branchName
-      }
+      },
+      fileCount: files.length
     }, message.id);
 
   } catch (error) {

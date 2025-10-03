@@ -507,6 +507,18 @@ async function handleApprovePlan(message, clientInfo) {
       plan
     }, message.id);
 
+    // Automatically trigger execution after approval
+    const execution = await orchestrator.executePlan(
+      planId,
+      clientInfo.session.id,
+      clientInfo.worktree
+    );
+
+    sendMessage(clientInfo.ws, 'execution-started', {
+      executionId: execution.id,
+      planId: planId
+    });
+
   } catch (error) {
     sendError(clientInfo.ws, error.message, message.id);
   }

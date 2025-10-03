@@ -167,7 +167,7 @@ export class ClaudeCodeAgent extends BaseAgent {
 
         // Send initial prompt as JSON
         const userMessage = {
-          type: 'user_message',
+          type: 'user',
           content: `Please create a detailed execution plan for: ${prompt}`
         };
         this.process.stdin.write(JSON.stringify(userMessage) + '\n');

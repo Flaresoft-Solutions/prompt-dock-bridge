@@ -84,39 +84,67 @@ export class ClaudeCodeAgent extends BaseAgent {
 
       const claudeCmd = this.claudePath || 'claude';
 
-      // Use -p (print/SDK mode) and pass prompt via stdin
-      const planPrompt = `Please create a detailed execution plan for the following task. Do not execute anything yet, just provide a clear plan with steps:\n\n${prompt}`;
-
       logger.info(`Executing Claude Code in plan mode`);
-      logger.info(`Command: ${claudeCmd} -p --output-format text`);
+      logger.info(`Command: ${claudeCmd} --permission-mode plan`);
       logger.info(`Working directory: ${workdir}`);
-      logger.info(`Prompt length: ${planPrompt.length} characters`);
+      logger.info(`Prompt: ${prompt}`);
 
-      const result = await this.spawnProcess(
-        claudeCmd,
-        ['-p', '--output-format', 'text'],
-        {
-          workdir,
-          input: planPrompt,
-          closeStdin: true, // Close stdin after sending prompt
-          onOutput: (output) => {
-            logger.info(`[Claude stdout]: ${output}`);
-            this.planOutput += output;
-          },
-          onError: (error) => {
-            logger.error(`[Claude stderr]: ${error}`);
-          }
-        }
-      );
+      // Use --permission-mode plan to keep process alive and wait for approval
+      // Store the process reference so we can approve later
+      return new Promise((resolve, reject) => {
+        const args = ['--permission-mode', 'plan'];
+        const spawnOptions = {
+          cwd: workdir || process.cwd(),
+          env: { ...process.env }
+        };
 
-      const rawOutput = result.stdout || this.planOutput;
+        logger.info(`Spawning claude-code in plan mode: ${claudeCmd} ${args.join(' ')}`);
 
-      return {
-        success: true,
-        plan: rawOutput,
-        raw: rawOutput,
-        modifiedFiles: this.extractModifiedFiles(rawOutput)
-      };
+        this.process = require('child_process').spawn(claudeCmd, args, spawnOptions);
+        this.executionId = require('uuid').v4();
+        this.status = 'planning';
+
+        this.process.stdout.on('data', (data) => {
+          const output = data.toString();
+          this.planOutput += output;
+          logger.info(`[Claude stdout]: ${output}`);
+
+          this.emit('output', {
+            type: 'stdout',
+            data: output,
+            executionId: this.executionId,
+            timestamp: new Date().toISOString()
+          });
+        });
+
+        this.process.stderr.on('data', (data) => {
+          const error = data.toString();
+          logger.error(`[Claude stderr]: ${error}`);
+
+          this.emit('output', {
+            type: 'stderr',
+            data: error,
+            executionId: this.executionId,
+            timestamp: new Date().toISOString()
+          });
+        });
+
+        // Send the prompt
+        this.process.stdin.write(prompt + '\n');
+
+        // Don't close stdin - keep it open for approval
+        // Resolve when we have the plan output (we'll detect this)
+        setTimeout(() => {
+          resolve({
+            success: true,
+            plan: this.planOutput,
+            raw: this.planOutput,
+            modifiedFiles: this.extractModifiedFiles(this.planOutput),
+            processKept: true  // Indicate process is still running
+          });
+        }, 5000);  // Wait 5 seconds for plan to generate
+      });
+
     } catch (error) {
       logger.error('Claude Code plan mode failed:', error);
       return {
@@ -124,10 +152,65 @@ export class ClaudeCodeAgent extends BaseAgent {
         error: error.message,
         raw: this.planOutput || error.message
       };
-    } finally {
-      this.isInPlanMode = false;
-      this.planOutput = '';
     }
+  }
+
+  async approvePlan() {
+    if (!this.process || this.status !== 'planning') {
+      throw new Error('No plan process to approve');
+    }
+
+    logger.info('Approving plan - sending approval to claude-code stdin');
+    this.status = 'executing';
+    this.isInPlanMode = false;
+
+    // Send approval (typically "y" or similar)
+    this.process.stdin.write('y\n');
+
+    return new Promise((resolve, reject) => {
+      this.process.on('close', (code) => {
+        this.status = 'idle';
+        this.process = null;
+
+        if (code === 0) {
+          resolve({
+            success: true,
+            output: this.planOutput
+          });
+        } else {
+          reject(new Error(`claude-code exited with code ${code}`));
+        }
+      });
+    });
+  }
+
+  async rejectPlan(feedback) {
+    if (!this.process || this.status !== 'planning') {
+      throw new Error('No plan process to reject');
+    }
+
+    logger.info('Rejecting plan - sending feedback to claude-code stdin');
+    this.planOutput = '';  // Reset to capture new plan
+
+    // Send "n" to reject and then the feedback
+    this.process.stdin.write('n\n');
+
+    if (feedback) {
+      logger.info(`Sending feedback: ${feedback}`);
+      this.process.stdin.write(feedback + '\n');
+    }
+
+    // Wait for new plan
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          success: true,
+          plan: this.planOutput,
+          raw: this.planOutput,
+          modifiedFiles: this.extractModifiedFiles(this.planOutput)
+        });
+      }, 5000);  // Wait for new plan
+    });
   }
 
   async executePrompt(prompt, workdir, options = {}) {

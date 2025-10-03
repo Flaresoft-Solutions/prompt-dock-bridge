@@ -65,7 +65,8 @@ export class ExecutionPlanner {
         approved: false,
         executed: false,
         backupBranch: null,
-        options
+        options,
+        agent  // Keep agent reference alive
       };
 
       plan.metadata = await this.extractPlanMetadata(plan);

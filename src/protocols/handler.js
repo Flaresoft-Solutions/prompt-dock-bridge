@@ -507,18 +507,23 @@ async function handleApprovePlan(message, clientInfo) {
       plan
     }, message.id);
 
-    // Automatically trigger execution after approval
-    logger.info(`Triggering execution for plan ${planId}`);
-    const execution = await orchestrator.executePlan(
-      planId,
-      clientInfo.session.id,
-      clientInfo.worktree
-    );
+    // Approve the plan on the agent process (which is still running)
+    logger.info(`Approving plan ${planId} on agent process`);
 
-    logger.info(`Execution started: ${execution.id}`);
-    sendMessage(clientInfo.ws, 'execution-started', {
-      executionId: execution.id,
-      planId: planId
+    if (!plan.agent) {
+      throw new Error('Agent process not found - plan may have expired');
+    }
+
+    // Send approval to the agent's stdin to continue execution
+    const result = await plan.agent.approvePlan();
+
+    logger.info(`Plan execution completed with status: ${result.success}`);
+
+    sendMessage(clientInfo.ws, 'execution-complete', {
+      executionId: plan.agent.executionId,
+      planId: planId,
+      status: result.success ? 'completed' : 'failed',
+      summary: result.output
     });
 
   } catch (error) {
@@ -531,14 +536,29 @@ async function handleRejectPlan(message, clientInfo) {
   try {
     const { planId, reason } = message.data;
 
-    const plan = planner.rejectPlan(planId, reason);
+    const plan = planner.getPlan(planId);
 
-    sendMessage(clientInfo.ws, 'plan-rejected', {
-      planId,
-      reason
-    }, message.id);
+    if (!plan) {
+      throw new Error('Plan not found');
+    }
+
+    if (!plan.agent) {
+      throw new Error('Agent process not found - plan may have expired');
+    }
+
+    logger.info(`Rejecting plan ${planId} with feedback: ${reason}`);
+
+    // Send rejection to the agent's stdin with feedback
+    const newPlanResult = await plan.agent.rejectPlan(reason);
+
+    // Update the plan with new content
+    plan.plan = newPlanResult.plan;
+    plan.modifiedFiles = newPlanResult.modifiedFiles || [];
+
+    sendMessage(clientInfo.ws, 'agent-plan', plan, message.id);
 
   } catch (error) {
+    logger.error(`Failed to reject plan: ${error.message}`, error);
     sendError(clientInfo.ws, error.message, message.id);
   }
 }

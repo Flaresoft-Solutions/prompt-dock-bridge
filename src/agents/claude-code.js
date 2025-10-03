@@ -1,7 +1,8 @@
 import { BaseAgent } from './base.js';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { logger } from '../utils/logger.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const execAsync = promisify(exec);
 
@@ -100,8 +101,8 @@ export class ClaudeCodeAgent extends BaseAgent {
 
         logger.info(`Spawning claude-code in plan mode: ${claudeCmd} ${args.join(' ')}`);
 
-        this.process = require('child_process').spawn(claudeCmd, args, spawnOptions);
-        this.executionId = require('uuid').v4();
+        this.process = spawn(claudeCmd, args, spawnOptions);
+        this.executionId = uuidv4();
         this.status = 'planning';
 
         this.process.stdout.on('data', (data) => {

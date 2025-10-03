@@ -85,51 +85,66 @@ export class ClaudeCodeAgent extends BaseAgent {
 
       const claudeCmd = this.claudePath || 'claude';
 
-      logger.info(`Executing Claude Code in plan mode`);
-      logger.info(`Command: ${claudeCmd} --permission-mode plan`);
+      logger.info(`Starting Claude Code streaming session`);
+      logger.info(`Command: ${claudeCmd} -p --input-format stream-json --output-format stream-json --permission-mode plan`);
       logger.info(`Working directory: ${workdir}`);
-      logger.info(`Prompt: ${prompt}`);
 
-      // Use --permission-mode plan to keep process alive and wait for approval
-      // Store the process reference so we can approve later
+      // Start streaming session
+      const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--permission-mode', 'plan'];
+      const spawnOptions = {
+        cwd: workdir || process.cwd(),
+        env: { ...process.env }
+      };
+
+      this.process = spawn(claudeCmd, args, spawnOptions);
+      this.executionId = uuidv4();
+      this.status = 'planning';
+
+      let messageBuffer = '';
+
       return new Promise((resolve, reject) => {
-        const args = ['--permission-mode', 'plan'];
-        const spawnOptions = {
-          cwd: workdir || process.cwd(),
-          env: { ...process.env }
-        };
-
-        logger.info(`Spawning claude-code in plan mode: ${claudeCmd} ${args.join(' ')}`);
-
-        this.process = spawn(claudeCmd, args, spawnOptions);
-        this.executionId = uuidv4();
-        this.status = 'planning';
-
-        let planResolved = false;
-
         this.process.stdout.on('data', (data) => {
           const output = data.toString();
-          this.planOutput += output;
-          logger.info(`[Claude stdout]: ${output}`);
+          messageBuffer += output;
 
-          this.emit('output', {
-            type: 'stdout',
-            data: output,
-            executionId: this.executionId,
-            timestamp: new Date().toISOString()
-          });
+          // Parse JSON messages (one per line)
+          const lines = messageBuffer.split('\n');
+          messageBuffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-          // Check if plan is complete (look for approval prompt)
-          if (!planResolved && (output.includes('Approve') || output.includes('[y/n]') || output.includes('Continue?'))) {
-            planResolved = true;
-            logger.info('Plan appears complete, resolving...');
-            resolve({
-              success: true,
-              plan: this.planOutput,
-              raw: this.planOutput,
-              modifiedFiles: this.extractModifiedFiles(this.planOutput),
-              processKept: true
-            });
+          for (const line of lines) {
+            if (!line.trim()) continue;
+
+            try {
+              const message = JSON.parse(line);
+              logger.info(`[Claude message]: ${JSON.stringify(message).substring(0, 200)}...`);
+
+              // Emit output for logging
+              this.emit('output', {
+                type: 'stdout',
+                data: JSON.stringify(message),
+                executionId: this.executionId,
+                timestamp: new Date().toISOString()
+              });
+
+              // Accumulate plan output
+              if (message.type === 'content' && message.content) {
+                this.planOutput += message.content;
+              }
+
+              // Check if plan is complete
+              if (message.type === 'plan' || (message.type === 'state' && message.state === 'awaiting_approval')) {
+                logger.info('Plan complete, awaiting approval');
+                resolve({
+                  success: true,
+                  plan: this.planOutput,
+                  raw: this.planOutput,
+                  modifiedFiles: this.extractModifiedFiles(this.planOutput),
+                  processKept: true
+                });
+              }
+            } catch (err) {
+              logger.error(`Failed to parse JSON message: ${line}`, err);
+            }
           }
         });
 
@@ -146,29 +161,17 @@ export class ClaudeCodeAgent extends BaseAgent {
         });
 
         this.process.on('close', (code) => {
-          if (!planResolved) {
-            logger.error(`Process closed before plan resolved with code ${code}`);
-            reject(new Error(`claude-code exited prematurely with code ${code}`));
-          }
+          logger.error(`Process closed with code ${code}`);
+          reject(new Error(`claude-code exited with code ${code}`));
         });
 
-        // Send the prompt
-        this.process.stdin.write(prompt + '\n');
-
-        // Fallback: resolve after 10 seconds if we haven't detected completion
-        setTimeout(() => {
-          if (!planResolved) {
-            planResolved = true;
-            logger.warn('Plan timeout - resolving with what we have');
-            resolve({
-              success: true,
-              plan: this.planOutput || 'No plan generated',
-              raw: this.planOutput,
-              modifiedFiles: this.extractModifiedFiles(this.planOutput),
-              processKept: true
-            });
-          }
-        }, 10000);
+        // Send initial prompt as JSON
+        const userMessage = {
+          type: 'user_message',
+          content: `Please create a detailed execution plan for: ${prompt}`
+        };
+        this.process.stdin.write(JSON.stringify(userMessage) + '\n');
+        logger.info(`Sent user message: ${prompt}`);
       });
 
     } catch (error) {
@@ -183,51 +186,73 @@ export class ClaudeCodeAgent extends BaseAgent {
 
   async approvePlan() {
     if (!this.process || this.status !== 'planning') {
-      throw new Error('No plan process to approve');
+      throw new Error('No active planning session to approve');
     }
 
-    logger.info('Approving plan - sending approval to claude-code stdin');
+    logger.info('Sending approval to claude-code');
     this.status = 'executing';
-    this.isInPlanMode = false;
-
-    // Send approval (typically "y" or similar)
-    this.process.stdin.write('y\n');
 
     return new Promise((resolve, reject) => {
-      this.process.on('close', (code) => {
-        this.status = 'idle';
-        this.process = null;
+      const approvalMessage = {
+        type: 'approval',
+        approved: true
+      };
 
-        if (code === 0) {
-          resolve({
-            success: true,
-            output: this.planOutput
-          });
-        } else {
-          reject(new Error(`claude-code exited with code ${code}`));
+      this.process.stdin.write(JSON.stringify(approvalMessage) + '\n');
+
+      // Listen for execution completion
+      let executionOutput = '';
+
+      const outputHandler = (data) => {
+        const output = data.toString();
+        executionOutput += output;
+
+        try {
+          const lines = output.split('\n').filter(l => l.trim());
+          for (const line of lines) {
+            const message = JSON.parse(line);
+            if (message.type === 'complete' || message.type === 'error') {
+              this.process.stdout.removeListener('data', outputHandler);
+              this.process = null;
+              this.status = 'idle';
+
+              if (message.type === 'complete') {
+                resolve({
+                  success: true,
+                  output: executionOutput
+                });
+              } else {
+                reject(new Error(message.error || 'Execution failed'));
+              }
+            }
+          }
+        } catch (err) {
+          // Continue accumulating
         }
-      });
+      };
+
+      this.process.stdout.on('data', outputHandler);
     });
   }
 
   async rejectPlan(feedback) {
     if (!this.process || this.status !== 'planning') {
-      throw new Error('No plan process to reject');
+      throw new Error('No active planning session to reject');
     }
 
-    logger.info('Rejecting plan - sending feedback to claude-code stdin');
-    this.planOutput = '';  // Reset to capture new plan
+    logger.info('Sending rejection with feedback to claude-code');
+    this.planOutput = '';
 
-    // Send "n" to reject and then the feedback
-    this.process.stdin.write('n\n');
-
-    if (feedback) {
-      logger.info(`Sending feedback: ${feedback}`);
-      this.process.stdin.write(feedback + '\n');
-    }
-
-    // Wait for new plan
     return new Promise((resolve) => {
+      const rejectionMessage = {
+        type: 'approval',
+        approved: false,
+        feedback
+      };
+
+      this.process.stdin.write(JSON.stringify(rejectionMessage) + '\n');
+
+      // Wait for new plan
       setTimeout(() => {
         resolve({
           success: true,
@@ -235,7 +260,7 @@ export class ClaudeCodeAgent extends BaseAgent {
           raw: this.planOutput,
           modifiedFiles: this.extractModifiedFiles(this.planOutput)
         });
-      }, 5000);  // Wait for new plan
+      }, 5000);
     });
   }
 

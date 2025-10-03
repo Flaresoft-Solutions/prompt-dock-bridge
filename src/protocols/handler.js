@@ -507,23 +507,31 @@ async function handleApprovePlan(message, clientInfo) {
       plan
     }, message.id);
 
-    // Approve the plan on the agent process (which is still running)
-    logger.info(`Approving plan ${planId} on agent process`);
+    // Execute the approved plan
+    logger.info(`Executing approved plan ${planId}`);
 
     if (!plan.agent) {
-      throw new Error('Agent process not found - plan may have expired');
+      throw new Error('Agent not found - plan may have expired');
     }
 
-    // Send approval to the agent's stdin to continue execution
+    // Start execution
+    const executionId = `exec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    sendMessage(clientInfo.ws, 'execution-started', {
+      executionId,
+      planId
+    });
+
+    // Execute the plan
     const result = await plan.agent.approvePlan();
 
-    logger.info(`Plan execution completed with status: ${result.success}`);
+    logger.info(`Plan execution completed`);
 
     sendMessage(clientInfo.ws, 'execution-complete', {
-      executionId: plan.agent.executionId,
-      planId: planId,
-      status: result.success ? 'completed' : 'failed',
-      summary: result.output
+      executionId,
+      planId,
+      status: 'completed',
+      summary: result.output || result.stdout
     });
 
   } catch (error) {

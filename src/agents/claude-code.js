@@ -86,11 +86,11 @@ export class ClaudeCodeAgent extends BaseAgent {
       const claudeCmd = this.claudePath || 'claude';
 
       logger.info(`Starting Claude Code streaming session`);
-      logger.info(`Command: ${claudeCmd} -p --input-format stream-json --output-format stream-json --permission-mode plan`);
+      logger.info(`Command: ${claudeCmd} -p --verbose --input-format stream-json --output-format stream-json --permission-mode plan`);
       logger.info(`Working directory: ${workdir}`);
 
       // Start streaming session
-      const args = ['-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--permission-mode', 'plan'];
+      const args = ['-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json', '--permission-mode', 'plan'];
       const spawnOptions = {
         cwd: workdir || process.cwd(),
         env: { ...process.env }

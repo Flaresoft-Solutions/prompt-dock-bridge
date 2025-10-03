@@ -105,6 +105,8 @@ export class ClaudeCodeAgent extends BaseAgent {
         this.executionId = uuidv4();
         this.status = 'planning';
 
+        let planResolved = false;
+
         this.process.stdout.on('data', (data) => {
           const output = data.toString();
           this.planOutput += output;
@@ -116,6 +118,19 @@ export class ClaudeCodeAgent extends BaseAgent {
             executionId: this.executionId,
             timestamp: new Date().toISOString()
           });
+
+          // Check if plan is complete (look for approval prompt)
+          if (!planResolved && (output.includes('Approve') || output.includes('[y/n]') || output.includes('Continue?'))) {
+            planResolved = true;
+            logger.info('Plan appears complete, resolving...');
+            resolve({
+              success: true,
+              plan: this.planOutput,
+              raw: this.planOutput,
+              modifiedFiles: this.extractModifiedFiles(this.planOutput),
+              processKept: true
+            });
+          }
         });
 
         this.process.stderr.on('data', (data) => {
@@ -130,20 +145,30 @@ export class ClaudeCodeAgent extends BaseAgent {
           });
         });
 
+        this.process.on('close', (code) => {
+          if (!planResolved) {
+            logger.error(`Process closed before plan resolved with code ${code}`);
+            reject(new Error(`claude-code exited prematurely with code ${code}`));
+          }
+        });
+
         // Send the prompt
         this.process.stdin.write(prompt + '\n');
 
-        // Don't close stdin - keep it open for approval
-        // Resolve when we have the plan output (we'll detect this)
+        // Fallback: resolve after 10 seconds if we haven't detected completion
         setTimeout(() => {
-          resolve({
-            success: true,
-            plan: this.planOutput,
-            raw: this.planOutput,
-            modifiedFiles: this.extractModifiedFiles(this.planOutput),
-            processKept: true  // Indicate process is still running
-          });
-        }, 5000);  // Wait 5 seconds for plan to generate
+          if (!planResolved) {
+            planResolved = true;
+            logger.warn('Plan timeout - resolving with what we have');
+            resolve({
+              success: true,
+              plan: this.planOutput || 'No plan generated',
+              raw: this.planOutput,
+              modifiedFiles: this.extractModifiedFiles(this.planOutput),
+              processKept: true
+            });
+          }
+        }, 10000);
       });
 
     } catch (error) {

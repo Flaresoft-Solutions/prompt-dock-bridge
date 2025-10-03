@@ -42,9 +42,10 @@ async function getDefaultBranch(repoPath) {
  * @param {string} repoPath - Main repository path
  * @param {string} baseBranch - Branch to base worktree on (auto-detected if null)
  * @param {string} workdir - Working directory for execution
+ * @param {Object} metadata - Optional metadata (promptName, promptId, promptFormat)
  * @returns {Promise<{worktreePath: string, branchName: string}>}
  */
-export async function createWorktree(repoPath, baseBranch = null, workdir = null) {
+export async function createWorktree(repoPath, baseBranch = null, workdir = null, metadata = {}) {
   try {
     const targetDir = workdir || repoPath;
 
@@ -54,10 +55,34 @@ export async function createWorktree(repoPath, baseBranch = null, workdir = null
       logger.info(`Auto-detected base branch: ${baseBranch}`);
     }
 
-    // Generate unique branch and worktree names
+    // Generate unique branch and worktree names with metadata
     const timestamp = Date.now();
     const uniqueId = uuidv4().split('-')[0];
-    const branchName = `agent-session-${timestamp}-${uniqueId}`;
+
+    // Build branch name with metadata if provided
+    let branchName = 'agent-session';
+
+    if (metadata.promptName) {
+      // Sanitize prompt name for branch name (remove special chars, spaces)
+      const safeName = metadata.promptName
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        .substring(0, 30); // Limit length
+      branchName += `-${safeName}`;
+    }
+
+    if (metadata.promptId) {
+      branchName += `-${metadata.promptId.substring(0, 8)}`; // Short ID
+    }
+
+    if (metadata.promptFormat) {
+      branchName += `-${metadata.promptFormat}`;
+    }
+
+    branchName += `-${timestamp}-${uniqueId}`;
+
     const worktreePath = path.join(targetDir, '.prompt-dock-worktrees', branchName);
 
     logger.info(`Creating worktree at ${worktreePath} from ${baseBranch}`);

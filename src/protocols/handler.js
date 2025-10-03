@@ -335,12 +335,15 @@ async function handleCreateWorktree(message, clientInfo) {
       throw new Error('Session not initialized - call init-session first');
     }
 
-    const { baseBranch } = message.data;
+    const { baseBranch, promptMetadata } = message.data;
     const workdir = clientInfo.workdir;
+
+    // Extract prompt metadata for branch naming
+    const metadata = promptMetadata || clientInfo.promptMetadata || {};
 
     // Create worktree for isolated execution
     const { createWorktree } = await import('../git/worktree.js');
-    const worktree = await createWorktree(workdir, baseBranch);
+    const worktree = await createWorktree(workdir, baseBranch, null, metadata);
 
     // Store worktree info on clientInfo for later use
     clientInfo.worktree = worktree;

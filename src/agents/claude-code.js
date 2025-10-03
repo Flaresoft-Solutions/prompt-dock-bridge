@@ -175,11 +175,13 @@ export class ClaudeCodeAgent extends BaseAgent {
         });
 
         // Send user message in correct stream-json format
+        // In plan mode, just send the prompt directly - Claude Code will automatically
+        // create a plan and wait for approval
         const userMessage = {
           type: 'user',
           message: {
             role: 'user',
-            content: `Please create a detailed execution plan for: ${prompt}`
+            content: prompt
           }
         };
         this.process.stdin.write(JSON.stringify(userMessage) + '\n');

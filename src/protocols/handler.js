@@ -508,18 +508,21 @@ async function handleApprovePlan(message, clientInfo) {
     }, message.id);
 
     // Automatically trigger execution after approval
+    logger.info(`Triggering execution for plan ${planId}`);
     const execution = await orchestrator.executePlan(
       planId,
       clientInfo.session.id,
       clientInfo.worktree
     );
 
+    logger.info(`Execution started: ${execution.id}`);
     sendMessage(clientInfo.ws, 'execution-started', {
       executionId: execution.id,
       planId: planId
     });
 
   } catch (error) {
+    logger.error(`Failed to approve/execute plan: ${error.message}`, error);
     sendError(clientInfo.ws, error.message, message.id);
   }
 }

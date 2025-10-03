@@ -109,13 +109,13 @@ export class ClaudeCodeAgent extends BaseAgent {
         }
       );
 
-      const plan = this.extractPlan(result.stdout || this.planOutput);
+      const rawOutput = result.stdout || this.planOutput;
 
       return {
         success: true,
-        plan,
-        raw: result.stdout || this.planOutput,
-        modifiedFiles: this.extractModifiedFiles(plan)
+        plan: rawOutput,
+        raw: rawOutput,
+        modifiedFiles: this.extractModifiedFiles(rawOutput)
       };
     } catch (error) {
       logger.error('Claude Code plan mode failed:', error);

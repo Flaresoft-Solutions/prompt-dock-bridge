@@ -246,19 +246,8 @@ export class BaseAgent extends EventEmitter {
   }
 
   trimBuffer(bufferName) {
-    if (!this.maxBufferSize) {
-      return;
-    }
-
-    const bufferValue = this[bufferName];
-
-    if (typeof bufferValue !== 'string') {
-      return;
-    }
-
-    if (bufferValue.length > this.maxBufferSize) {
-      this[bufferName] = bufferValue.slice(bufferValue.length - this.maxBufferSize);
-    }
+    // Don't trim buffers - we need the full output for plans and execution
+    return;
   }
 
   isWaitingForInput(output) {

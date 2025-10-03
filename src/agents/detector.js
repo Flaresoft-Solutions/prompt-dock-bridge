@@ -5,8 +5,9 @@ import { logger } from '../utils/logger.js';
 
 const agents = [
   { name: 'claude-code', class: ClaudeCodeAgent },
-  { name: 'cursor-agent', class: CursorAgent },
-  { name: 'codex', class: CodexAgent }
+  // Temporarily disabled - focusing on Claude Code first
+  // { name: 'cursor-agent', class: CursorAgent },
+  // { name: 'codex', class: CodexAgent }
 ];
 
 export async function detectAgents(config = {}) {
